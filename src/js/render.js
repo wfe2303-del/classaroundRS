@@ -1,4 +1,4 @@
-import { OTHER_COLOR, PALETTE, PAYERS_SOURCE } from './config.js';
+import { PALETTE, OTHER_COLOR } from './config.js';
 import { activeCoach, appState } from './state.js';
 import { drawDonut } from './charts.js';
 import { $, esc, formatKRW } from './utils.js';
@@ -32,10 +32,6 @@ export function renderAuthUi() {
   const loggedIn = Boolean(appState.user && appState.accessToken);
   $('loginSection').classList.toggle('hidden', loggedIn);
   $('appSection').classList.toggle('hidden', !loggedIn);
-  $('logoutBtn').classList.toggle('hidden', !loggedIn);
-  $('syncPayersBtn').classList.toggle('hidden', !loggedIn);
-  $('exportBtn').classList.toggle('hidden', !loggedIn);
-  $('requestAccessBtn').classList.toggle('hidden', loggedIn);
 
   const userBadge = $('userBadge');
   userBadge.classList.toggle('hidden', !loggedIn);
@@ -51,15 +47,10 @@ export function renderSheetCatalog() {
 
   select.innerHTML = catalog.length
     ? catalog.map((sheet) => `<option value="${sheet.sheetId}">${esc(sheet.title)}</option>`).join('')
-    : '<option value="">시트 목록 없음</option>';
+    : '<option value="">시트 없음</option>';
 
   if (coach?.payerSheetId) select.value = String(coach.payerSheetId);
   if (!select.value && catalog[0]) select.value = String(catalog[0].sheetId);
-
-  const current = catalog.find((sheet) => String(sheet.sheetId) === String(select.value));
-  $('currentSourceLabel').textContent = current
-    ? `${current.title} · ${PAYERS_SOURCE.spreadsheetUrl}`
-    : PAYERS_SOURCE.spreadsheetUrl;
 }
 
 export function renderCoachTabs() {
@@ -84,7 +75,7 @@ export function renderStatus() {
 
   const currentSheet = appState.sheetCatalog.find((sheet) => String(sheet.sheetId) === String(coach.payerSheetId));
   const status = [
-    coach.payers ? `결제자 ${currentSheet?.title || coach.payerSheetTitle || '연결 완료'}` : '결제자 미연결',
+    coach.payers ? `결제자 ${currentSheet?.title || coach.payerSheetTitle || '연결 완료'}` : '결제자 미선택',
     coach.applicants ? '신청자 준비 완료' : '신청자 미등록',
     coach.results ? '결과 준비 완료' : '결과 대기',
   ];
@@ -98,7 +89,7 @@ export function renderMissingPhoneTable() {
   $('missingPhoneSumBadge').textContent = coach?.payers ? `합계 ${formatKRW(coach.payers.missingPhoneAmountSum || 0)}` : '-';
 
   if (!coach?.payers) {
-    $('missingPhoneTbody').innerHTML = '<tr><td colspan="5" class="empty-row">결제자 시트를 먼저 불러와 주세요.</td></tr>';
+    $('missingPhoneTbody').innerHTML = '<tr><td colspan="5" class="empty-row">결제자 시트를 선택해 주세요.</td></tr>';
     return;
   }
 

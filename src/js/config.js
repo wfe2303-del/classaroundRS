@@ -1,8 +1,8 @@
-export const APP_TITLE = '정산 매칭 대시보드';
+export const APP_TITLE = '정산 매칭 보드';
 export const STORAGE_KEY = 'rs-modular-google-v1';
 
-export const GOOGLE_CLIENT_ID = '18228268359-iifm4ck3j9kqj74eh1p90tco1k2mbpi0.apps.googleusercontent.com';
-export const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+export const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+export const GOOGLE_SHEETS_SCOPE = 'openid email profile https://www.googleapis.com/auth/spreadsheets.readonly';
 
 export const PAYERS_SOURCE = {
   spreadsheetId: '1qclrbo3_VG-sSNIqMW4j1juzwP3nq_ZaT-y1z6WLafc',

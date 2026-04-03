@@ -1,17 +1,17 @@
 import { GOOGLE_CLIENT_ID, GOOGLE_SHEETS_SCOPE } from './config.js';
-import { parseJwtCredential } from './utils.js';
 
 let tokenClient = null;
 let onSignIn = () => {};
 let onStatus = () => {};
 let onSignedOut = () => {};
+let loginButton = null;
 
 function waitForGoogleLibrary() {
   return new Promise((resolve, reject) => {
     let tries = 0;
     const timer = setInterval(() => {
       tries += 1;
-      if (window.google?.accounts?.id && window.google?.accounts?.oauth2) {
+      if (window.google?.accounts?.oauth2) {
         clearInterval(timer);
         resolve(window.google);
       }
@@ -23,10 +23,25 @@ function waitForGoogleLibrary() {
   });
 }
 
-export async function initGoogleAuth({ loginContainer, onSignedIn, onStatusChange, onLogout }) {
+async function fetchUserProfile(accessToken) {
+  const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) return null;
+  const profile = await response.json();
+  return {
+    name: profile.name || profile.email || 'Google 사용자',
+    email: profile.email || '',
+    picture: profile.picture || '',
+  };
+}
+
+export async function initGoogleAuth({ loginButtonElement, onSignedIn, onStatusChange, onLogout }) {
   onSignIn = onSignedIn;
   onStatus = onStatusChange;
   onSignedOut = onLogout;
+  loginButton = loginButtonElement;
 
   const googleApi = await waitForGoogleLibrary();
 
@@ -35,104 +50,60 @@ export async function initGoogleAuth({ loginContainer, onSignedIn, onStatusChang
     return;
   }
 
-  googleApi.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleCredentialResponse,
-    auto_select: false,
-    ux_mode: 'popup',
-  });
-
-  googleApi.accounts.id.renderButton(loginContainer, {
-    theme: 'outline',
-    size: 'large',
-    text: 'signin_with',
-    shape: 'pill',
-    locale: 'ko',
-  });
-
   tokenClient = googleApi.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: GOOGLE_SHEETS_SCOPE,
-    callback: handleTokenResponse,
+    callback: async (tokenResponse) => {
+      if (tokenResponse?.error) {
+        onStatus('로그인이 완료되지 않았습니다.');
+        return;
+      }
+
+      const user = await fetchUserProfile(tokenResponse.access_token);
+      onStatus('');
+      onSignIn({
+        user,
+        accessToken: tokenResponse.access_token,
+        grantedScopes: tokenResponse.scope || '',
+      });
+    },
     error_callback: (error) => {
-      const msg = error?.type === 'popup_closed' ? '권한 요청 창이 닫혔습니다.' : '권한 요청 중 문제가 발생했습니다.';
+      const msg = error?.type === 'popup_closed' ? '로그인 창이 닫혔습니다.' : '로그인 중 문제가 발생했습니다.';
       onStatus(msg);
     },
   });
-}
 
-function handleCredentialResponse(response) {
-  const profile = parseJwtCredential(response.credential);
-  if (!profile) {
-    onStatus('로그인 정보를 확인하지 못했습니다. 다시 시도해 주세요.');
-    return;
+  if (loginButton) {
+    loginButton.addEventListener('click', () => requestSheetsAccess(true), { once: false });
   }
-
-  onStatus('시트 접근 권한을 확인하고 있습니다.');
-  requestSheetsAccess(true, profile);
 }
 
-function handleTokenResponse(tokenResponse) {
-  if (tokenResponse?.error) {
-    onStatus('시트 접근 권한을 승인하지 않으셨습니다.');
-    return;
-  }
-
-  const user = tokenResponse._userProfile || null;
-  onStatus('');
-  onSignIn({
-    user,
-    accessToken: tokenResponse.access_token,
-    grantedScopes: tokenResponse.scope || '',
-  });
-}
-
-export function requestSheetsAccess(promptConsent = false, profile = null) {
+export function requestSheetsAccess(promptConsent = false) {
   if (!tokenClient) {
     onStatus('Google 인증이 아직 준비되지 않았습니다.');
     return;
   }
 
-  tokenClient.callback = (tokenResponse) => {
-    if (tokenResponse?.error) {
-      onStatus('시트 권한 승인이 완료되지 않았습니다.');
-      return;
-    }
-
-    onStatus('');
-    onSignIn({
-      user: profile,
-      accessToken: tokenResponse.access_token,
-      grantedScopes: tokenResponse.scope || '',
-    });
-  };
-
+  onStatus('로그인 중입니다.');
   tokenClient.requestAccessToken({
-    prompt: promptConsent ? 'consent' : '',
+    prompt: promptConsent ? 'consent select_account' : '',
   });
 }
 
 export function signOut(accessToken, userEmail = '') {
-  if (!window.google?.accounts) return;
+  if (!window.google?.accounts) {
+    onSignedOut();
+    return;
+  }
 
   try {
-    window.google.accounts.id.disableAutoSelect();
     if (accessToken) {
       window.google.accounts.oauth2.revoke(accessToken, () => {
         if (userEmail) {
-          window.google.accounts.id.revoke(userEmail, () => {
-            onSignedOut();
-          });
+          window.google.accounts.id?.revoke?.(userEmail, () => onSignedOut());
         } else {
           onSignedOut();
         }
-      });
-      return;
-    }
-
-    if (userEmail) {
-      window.google.accounts.id.revoke(userEmail, () => {
-        onSignedOut();
       });
       return;
     }

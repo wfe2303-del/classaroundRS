@@ -1,5 +1,5 @@
 import { PAYERS_SOURCE } from './config.js';
-import { initGoogleAuth, requestSheetsAccess, signOut } from './auth.js';
+import { initGoogleAuth, signOut } from './auth.js';
 import { exportReportPng } from './exportReport.js';
 import { computeResults, parseApplicants, parsePayersFromGrid } from './parsers.js';
 import { renderAll } from './render.js';
@@ -38,18 +38,18 @@ async function syncPayersForActiveCoach() {
     return;
   }
   if (!appState.accessToken) {
-    alert('먼저 Google 로그인을 완료해 주세요.');
+    alert('먼저 로그인해 주세요.');
     return;
   }
 
   const selectedSheetId = $('sheetSelect').value;
   const selectedSheet = appState.sheetCatalog.find((sheet) => String(sheet.sheetId) === String(selectedSheetId));
   if (!selectedSheet) {
-    alert('불러올 시트를 먼저 선택해 주세요.');
+    alert('불러올 시트를 선택해 주세요.');
     return;
   }
 
-  $('statusPill').textContent = '결제자 시트를 읽고 있습니다.';
+  $('statusPill').textContent = '결제자 시트를 불러오는 중입니다.';
   const grid = await fetchSheetGrid(appState.accessToken, selectedSheet.title);
   coach.payerSheetId = selectedSheet.sheetId;
   coach.payerSheetTitle = selectedSheet.title;
@@ -66,6 +66,9 @@ async function handleSignedIn({ user, accessToken }) {
   setLoginStatus('');
   await refreshSheetCatalog();
   renderAll();
+  if (appState.sheetCatalog.length) {
+    await syncPayersForActiveCoach();
+  }
 }
 
 function handleSignedOut() {
@@ -75,15 +78,22 @@ function handleSignedOut() {
 }
 
 function bindEvents() {
-  $('requestAccessBtn').addEventListener('click', () => {
-    requestSheetsAccess(true, appState.user || null);
-  });
-
   $('logoutBtn').addEventListener('click', () => {
     signOut(appState.accessToken, appState.user?.email || '');
   });
 
-  $('syncPayersBtn').addEventListener('click', async () => {
+  $('sheetSelect').addEventListener('change', async (event) => {
+    const coach = activeCoach();
+    if (!coach) return;
+    const selectedSheet = appState.sheetCatalog.find((sheet) => String(sheet.sheetId) === String(event.target.value));
+    if (!selectedSheet) return;
+
+    coach.payerSheetId = selectedSheet.sheetId;
+    coach.payerSheetTitle = selectedSheet.title;
+    coach.results = null;
+    persistState();
+    renderAll();
+
     try {
       await syncPayersForActiveCoach();
     } catch (error) {
@@ -91,18 +101,6 @@ function bindEvents() {
       alert(error.message || '결제자 시트를 불러오지 못했습니다.');
       renderAll();
     }
-  });
-
-  $('sheetSelect').addEventListener('change', (event) => {
-    const coach = activeCoach();
-    if (!coach) return;
-    const selectedSheet = appState.sheetCatalog.find((sheet) => String(sheet.sheetId) === String(event.target.value));
-    if (!selectedSheet) return;
-    coach.payerSheetId = selectedSheet.sheetId;
-    coach.payerSheetTitle = selectedSheet.title;
-    coach.results = null;
-    persistState();
-    renderAll();
   });
 
   $('countMode').addEventListener('change', () => {
@@ -133,7 +131,7 @@ function bindEvents() {
   $('runBtn').addEventListener('click', () => {
     const coach = activeCoach();
     if (!coach?.payers) {
-      alert('결제자 시트를 먼저 동기화해 주세요.');
+      alert('결제자 시트를 먼저 선택해 주세요.');
       return;
     }
     if (!coach?.applicants) {
@@ -175,12 +173,21 @@ function bindEvents() {
     renderAll();
   });
 
-  $('coachTabs').addEventListener('click', (event) => {
+  $('coachTabs').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-coach-id]');
     if (!button) return;
     appState.activeCoachId = button.dataset.coachId;
     persistState();
     renderAll();
+
+    const coach = activeCoach();
+    if (coach?.payerSheetId && appState.accessToken) {
+      try {
+        await syncPayersForActiveCoach();
+      } catch (error) {
+        console.error(error);
+      }
+    }
   });
 
   $('exportBtn').addEventListener('click', () => {
@@ -194,7 +201,7 @@ async function bootstrap() {
 
   try {
     await initGoogleAuth({
-      loginContainer: $('googleLoginBtn'),
+      loginButtonElement: $('googleLoginBtn'),
       onSignedIn: handleSignedIn,
       onStatusChange: setLoginStatus,
       onLogout: handleSignedOut,
